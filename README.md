@@ -1,10 +1,4 @@
-### This is our final project for Machine Learning 1 - Classification methods
+### My Final projects for Masters Course for Data Science done with classmates and individually. 
 
-Models: 
-SVR
-Linear and Logistic Regression 
-SVM 
-LASSO 
-Elastic ridge 
-Ridge 
+
 
