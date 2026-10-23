@@ -1,0 +1,247 @@
+---\
+title: "Clustering and Dimension Reduction"\
+author: "Nomakhephu Nomcoyiya"\
+
+------------------------------------------------------------------------
+
+Dimensionality reduction is a machine learning technique that reduces the number of input variables (features) in a dataset while retaining essential information and patterns.
+
+The data used in this project is about the crimes committed between years 2003-2019 in the Republic of Ireland. The data was obtained from kaggle."This data set in its original form has been taken from StatBank, Central Statistics Office, Govt. of Ireland website - \> <https://statbank.cso.ie/>"
+
+# Loading the libraries and reading the data set
+
+```{r}
+
+library(tidyverse)   
+library(factoextra)  
+library(cluster)
+library(gridExtra)
+library(Rtsne)       
+library(corrplot)     
+library(ggrepel)  
+library(ggfortify)
+
+
+crime_data <- read.csv("IRELAND_CRIME_GARDA_DIVISION_wise_2003-2019.csv", check.names = FALSE)
+#View(crime_data)
+
+```
+
+# Identifying the quarters' columns
+
+```{r}
+quarter_cols <- colnames(crime_data)[6:ncol(crime_data)]
+
+quarter_cols
+```
+
+# Initial Analysis of dataset
+
+We calculate the total crimes per offence type for each Garda division and reshape the data into a wide matrix ready for analysis
+
+```{r}
+str(crime_data)
+
+crime_data$Total_Crimes <- rowSums(crime_data[quarter_cols], na.rm = TRUE)
+```
+
+```{r}
+#Mean of the for the total crimes committed.
+
+mean(crime_data$Total_Crimes, na.rm = TRUE)
+
+names(crime_data)
+```
+
+```{r}
+# We keep only needed columns
+crime_clean <- crime_data[, c("GARDA DIVISION", "TYPE OF OFFENCE", "Total_Crimes")]
+
+# Aggregate totals by Division and Offence Type
+crime_clean <- aggregate(
+  Total_Crimes ~ `GARDA DIVISION` + `TYPE OF OFFENCE`,
+  data = crime_clean,
+  sum
+)
+
+# We convert from long to wide format
+crime_clean <- reshape(
+  crime_clean,
+  idvar = "GARDA DIVISION",
+  timevar = "TYPE OF OFFENCE",
+  direction = "wide"
+)
+
+# Fix column names 
+colnames(crime_clean) <- sub("Total_Crimes\\.", "", colnames(crime_clean))
+
+# Set row names as divisions
+rownames(crime_clean) <- crime_clean$`GARDA DIVISION`
+crime_clean$`GARDA DIVISION` <- NULL
+```
+
+```{r}
+
+# We ask ourselves do certain crimes happen together?
+
+data_corr <- cor(crime_clean, method="pearson") 
+corrplot(data_corr, order ="alphabet", tl.cex=0.3)
+
+# The correlation matrix shows strong positive correlations among most crime categories, 
+# indicating substantial shared variance and redundancy in the data. 
+
+```
+
+```{r}
+#Summary of the data and a plot
+
+summary(crime_data)
+
+plot(crime_clean[,1])
+```
+
+#Principal Component Analysis (PCA) PCA is an unsupervised, dimensionality reduction technique that transforms large, correlated datasets into a smaller, uncorrelated set of variables called principal components, retaining maximum variance. Below we perform PCA on our scaled data.
+
+```{r}
+crime_numeric <- crime_data[, sapply(crime_data, is.numeric)]
+```
+
+```{r}
+
+pca_crime <- prcomp(crime_numeric, center = TRUE, scale. = TRUE)
+
+summary(pca_crime)
+```
+
+#The scree plot shows a clear elbow after the second component, indicating that #the first two principal components capture most of the variance.
+
+```{r}
+var_explained <- pca_crime$sdev^2 / sum(pca_crime$sdev^2)
+
+plot(
+  var_explained,
+  type = "b",
+  xlab = "Principal Component",
+  ylab = "Proportion of Variance Explained"
+)
+```
+
+```{r}
+# Cumulative variance
+
+plot(
+  cumsum(var_explained),
+  type = "b",
+  xlab = "Principal Component",
+  ylab = "Cumulative Proportion of Variance"
+)
+abline(h = 0.85, col = "red", lty = 2)
+```
+
+```{r}
+ggplot(loadings, aes(PC1, PC2, label = variable)) +
+  geom_segment(
+    aes(xend = 0, yend = 0),
+    arrow = arrow(length = unit(0.15, "cm")),
+    colour = "red"
+  ) +
+  geom_text(hjust = 1.1, vjust = 1.1, colour = "red") +
+  theme_minimal() +
+  labs(
+    title = "PCA Loadings Plot"
+  )
+```
+
+```{r}
+
+# Biplot
+fviz_pca_biplot(pca_crime, repel = TRUE, col.var = "red")
+
+#The biplot shows that most crime categories load positively on PC1,
+#consistent with an overall crime intensity factor.
+
+autoplot(
+  pca_crime,
+  loadings = TRUE,
+  loadings.label = TRUE)
+
+```
+
+# Clustering
+
+Clustering is an unsupervised machine learning technique that automatically groups similar data points into clusters based on shared characteristics, without requiring pre-existing labels
+
+Before we proceed, we take a look at different number of clusters and plot them.
+
+```{r}
+
+crime_scaled <- scale(crime_numeric)
+
+k1 = kmeans(crime_scaled, centers=2, nstart=25)
+k2 = kmeans(crime_scaled, centers=3, nstart=25)
+k3 = kmeans(crime_scaled, centers=4, nstart=25)
+k4 = kmeans(crime_scaled, centers=5, nstart=25)
+
+
+p1 <- fviz_cluster(k1, geom = "point", crime_scaled) + ggtitle("k = 2")
+p2 <- fviz_cluster(k2, geom = "point", crime_scaled) + ggtitle("k = 3")
+p3 <- fviz_cluster(k3, geom = "point", crime_scaled) + ggtitle("k = 4")
+p4 <- fviz_cluster(k4, geom = "point", crime_scaled) + ggtitle("k = 5")
+
+grid.arrange(p1, p2, p3, p4, nrow=2)
+```
+
+```{r}
+#We find optimal number of clusters below - Elbow method
+
+fviz_nbclust(crime_scaled, kmeans, method = "wss") +
+  geom_vline(xintercept = 3, linetype = 2, color = "red") +
+  labs(title = "Elbow Method for Optimal K",
+       subtitle = "Looking for the 'bend' in the curve",
+       x = "Number of Clusters (k)",
+       y = "Total Within-cluster Sum of Squares")
+```
+
+```{r}
+#Silhouette method
+
+fviz_nbclust(crime_scaled, FUN = kmeans, method = "silhouette")
+
+#Visualisation
+sil<-silhouette(k3$cluster, dist(crime_scaled))
+fviz_silhouette(sil)
+```
+
+K-Means was selected as the primary clustering algorithm due to its interpretability and its ability to define Centroid-based profiles.
+
+```{r}
+set.seed(123)
+km_crime <- kmeans(crime_scaled, centers = 2, nstart = 25)
+km_crime1 <- kmeans(crime_scaled, centers = 3, nstart = 25)
+
+
+fviz_cluster(km_crime, data = crime_scaled, palette = "viridis", ggtheme = theme_minimal())
+fviz_cluster(km_crime1, data = crime_scaled, palette = "viridis", ggtheme = theme_minimal())
+
+
+plot(crime_scaled, col = crime_data$`OFFENCE CODE`, pch=".", cex=3)
+```
+
+The k-means clustering with k = 2 separates divisions primarily along the first principal component, which explains 75.7% of the variance and represents overall crime intensity. Cluster 1 contains divisions with consistently higher crime levels across most categories, including major urban and metropolitan areas. Cluster 2 consists of divisions with lower and more homogeneous crime levels. The second component explains relatively little variance, indicating that differences in crime composition play a secondary role in the clustering.
+
+```{r}
+# Hierarchical clustering - This depicts the "genetic" relationship between divisions.
+
+# We perform the GAP stat to give us optimal number of K 
+gap_stat <- clusGap(crime_scaled, FUN = kmeans, nstart = 25, K.max = 10, B = 50)
+fviz_gap_stat(gap_stat)
+
+# Dendrogram
+dist_mat <- dist(crime_scaled, method = "euclidean")
+h_clust <- hclust(dist_mat, method = "ward.D2")
+plot(h_clust, cex = 0.7, main = "Dendrogram of Crime Similarity")
+
+#If two divisions merge early (at a low height), they share a similar economic structure. For example, 
+#if two mid-sized towns merge, it suggests they face similar socio-economic challenges regardless of 
+#their physical distance.
+```
