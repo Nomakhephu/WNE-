@@ -1,0 +1,339 @@
+---
+title: "Determinants of Student Academic Outcomes: A General-to-Specific Multinomial Logit Approach"
+author: "Nomakhephu Nomcoyiya (488379) & Rita Obiora (481994)"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    toc: true
+    number_sections: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+options(scipen = 9999)
+```
+
+# Appendix: R Code
+
+## Libraries and Data
+
+```{r load-libraries}
+library(mlogit)
+library(dfidx)
+library(car)
+library(tidyverse)
+library(knitr)
+library(modelsummary)
+library(writexl)
+```
+
+```{r load-data}
+# Load the dataset
+student_data <- read.csv("data 3.csv", sep = ";")
+```
+
+```{r missing-data}
+# Check for missing values across all columns
+colSums(is.na(student_data))
+```
+
+```{r descriptive-statistics}
+# Descriptive statistics for all explanatory variables
+summary(student_data[, c("Debtor", "Tuition.fees.up.to.date", 
+                          "Scholarship.holder", "Admission.grade",
+                          "Curricular.units.2nd.sem..grade.",
+                          "Age.at.enrollment", "Gender", 
+                          "Unemployment.rate")])
+```
+
+## Data Transformations
+
+```{r recode-target}
+# Convert Target to factor with Graduate as reference category
+student_data$Target <- as.character(student_data$Target)
+
+student_data$Target <- factor(student_data$Target,
+                               levels = c("Graduate", "Dropout", "Enrolled"))
+
+levels(student_data$Target)
+table(student_data$Target)
+```
+
+```{r reshape-mlogit}
+# Reshape data into long format required by mlogit
+student_mlogit <- dfidx(student_data,
+                        choice = "Target",
+                        shape = "wide")
+```
+
+## Data Visualisation
+
+```{r plot-outcomes}
+# Distribution of student outcomes
+ggplot(student_data, aes(x = Target, fill = Target)) +
+  geom_bar() +
+  labs(title = "Distribution of Student Outcomes",
+       x = "Outcome", y = "Number of Students") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+```{r plot-debtor}
+# Student outcomes by debtor status
+ggplot(student_data, aes(x = Target, fill = Target)) +
+  geom_bar() +
+  facet_wrap(~ Debtor) +
+  labs(title = "Student Outcomes by Debtor Status",
+       x = "Outcome", y = "Count") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+```{r plot-tuition}
+# Student outcomes by tuition payment status
+ggplot(student_data, aes(x = Target, fill = Target)) +
+  geom_bar() +
+  facet_wrap(~ Tuition.fees.up.to.date) +
+  labs(title = "Student Outcomes by Tuition Payment Status",
+       x = "Outcome", y = "Count") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+```{r plot-scholarship}
+# Student outcomes by scholarship status
+ggplot(student_data, aes(x = Target, fill = Target)) +
+  geom_bar() +
+  facet_wrap(~ Scholarship.holder) +
+  labs(title = "Student Outcomes by Scholarship Status",
+       x = "Outcome", y = "Count") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+```{r plot-admission}
+# Admission grade distribution by student outcome
+ggplot(student_data, aes(x = Target, y = Admission.grade, fill = Target)) +
+  geom_boxplot() +
+  labs(title = "Admission Grade by Student Outcome",
+       x = "Outcome", y = "Admission Grade") +
+  theme_minimal() +
+  theme(legend.position = "none")
+```
+
+## Model Estimation
+
+```{r general-model}
+# General unrestricted model with 14 variables
+general_model <- mlogit(Target ~ 1 | Debtor + Tuition.fees.up.to.date +
+                          Scholarship.holder + Admission.grade +
+                          Previous.qualification..grade. +
+                          Curricular.units.2nd.sem..grade. +
+                          Age.at.enrollment + Gender + Displaced +
+                          Daytime.evening.attendance. +
+                          Mother.s.qualification + Unemployment.rate +
+                          Inflation.rate + GDP,
+                          data = student_mlogit,
+                          reflevel = "Graduate")
+
+summary(general_model)
+```
+
+```{r intermediate-model}
+# Intermediate model after removing 5 insignificant variables
+intermediate_model <- mlogit(Target ~ 1 | Debtor + Tuition.fees.up.to.date +
+                          Scholarship.holder + Admission.grade +
+                          Curricular.units.2nd.sem..grade. +
+                          Age.at.enrollment + Gender +
+                          Mother.s.qualification + Unemployment.rate,
+                          data = student_mlogit,
+                          reflevel = "Graduate")
+
+summary(intermediate_model)
+```
+
+```{r final-model}
+# Final specific model after removing Mother.s.qualification
+final_model <- mlogit(Target ~ 1 | Debtor + Tuition.fees.up.to.date +
+                          Scholarship.holder + Admission.grade +
+                          Curricular.units.2nd.sem..grade. +
+                          Age.at.enrollment + Gender +
+                          Unemployment.rate,
+                          data = student_mlogit,
+                          reflevel = "Graduate")
+
+summary(final_model)
+```
+
+## Interaction Terms
+
+```{r first-interaction}
+# First attempt: Debtor:Tuition and Scholarship:Admission interactions
+first_int <- mlogit(Target ~ 1 | Debtor + Tuition.fees.up.to.date +
+                          Scholarship.holder + Admission.grade +
+                          Curricular.units.2nd.sem..grade. +
+                          Age.at.enrollment + Gender +
+                          Unemployment.rate +
+                          Debtor:Tuition.fees.up.to.date +
+                          Scholarship.holder:Admission.grade,
+                          data = student_mlogit,
+                          reflevel = "Graduate")
+
+summary(first_int)
+```
+
+```{r mean-centering}
+# Mean-centering to address multicollinearity in interaction terms
+student_data$Debtor_c <- scale(student_data$Debtor, scale = FALSE)
+student_data$Tuition_c <- scale(student_data$Tuition.fees.up.to.date, scale = FALSE)
+student_data$Scholarship_c <- scale(student_data$Scholarship.holder, scale = FALSE)
+student_data$Admission_c <- scale(student_data$Admission.grade, scale = FALSE)
+
+student_mlogit_c <- dfidx(student_data,
+                           choice = "Target",
+                           shape = "wide")
+
+centered_int <- mlogit(Target ~ 1 | Debtor_c + Tuition_c +
+                          Scholarship_c + Admission_c +
+                          Curricular.units.2nd.sem..grade. +
+                          Age.at.enrollment + Gender +
+                          Unemployment.rate +
+                          Debtor_c:Tuition_c +
+                          Scholarship_c:Admission_c,
+                          data = student_mlogit_c,
+                          reflevel = "Graduate")
+
+summary(centered_int)
+```
+
+```{r final-model-interaction}
+# Final model with Gender:Debtor interaction
+final_model_int <- mlogit(Target ~ 1 | Debtor + Tuition.fees.up.to.date +
+                          Scholarship.holder + Admission.grade +
+                          Curricular.units.2nd.sem..grade. +
+                          Age.at.enrollment + Gender +
+                          Unemployment.rate +
+                          Gender:Debtor,
+                          data = student_mlogit,
+                          reflevel = "Graduate")
+
+summary(final_model_int)
+```
+
+## Average Marginal Effects
+
+```{r marginal-effects}
+# Average marginal effects for all variables in the final model
+vars <- c("Debtor", "Tuition.fees.up.to.date", "Scholarship.holder", 
+          "Admission.grade", "Curricular.units.2nd.sem..grade.", 
+          "Age.at.enrollment", "Gender", "Unemployment.rate")
+
+for(v in vars) {
+  cat("\n---", v, "---\n")
+  print(round(apply(effects(final_model_int, covariate = v, 
+                            data = student_mlogit), 2, mean), 4))
+}
+```
+
+## Publication Quality Table
+
+```{r}
+
+# Get estimates for each model
+general_est <- get_estimates(general_model)
+intermediate_est <- get_estimates(intermediate_model)
+final_est <- get_estimates(final_model_int)
+
+# Add significance stars
+add_stars <- function(p) {
+  ifelse(p < 0.01, "***", ifelse(p < 0.05, "**", ifelse(p < 0.1, "*", "")))
+}
+
+# Create coefficient + stars + se columns for each model
+format_model <- function(est, model_name) {
+  est$coef_stars <- paste0(round(est$estimate, 4), add_stars(est$p.value))
+  est$se_formatted <- paste0("(", round(est$std.error, 4), ")")
+  est[, c("term", "coef_stars", "se_formatted")]
+}
+
+general_fmt <- format_model(general_est, "General")
+intermediate_fmt <- format_model(intermediate_est, "Intermediate")
+final_fmt <- format_model(final_est, "Final")
+
+# Merge all models side by side
+all_terms <- unique(c(general_fmt$term, intermediate_fmt$term, final_fmt$term))
+
+wide_table <- data.frame(term = all_terms)
+wide_table <- merge(wide_table, general_fmt, by = "term", all.x = TRUE)
+wide_table <- merge(wide_table, intermediate_fmt, by = "term", all.x = TRUE, 
+                    suffixes = c("_general", "_intermediate"))
+wide_table <- merge(wide_table, final_fmt, by = "term", all.x = TRUE)
+wide_table[is.na(wide_table)] <- ""
+
+colnames(wide_table) <- c("Term", "General Coef", "General SE", 
+                           "Intermediate Coef", "Intermediate SE",
+                           "Final Coef", "Final SE")
+
+write_xlsx(wide_table, "publication_table_wide.xlsx")
+```
+
+## Diagnostic Tests
+
+```{r linktest}
+# Extract fitted probabilities for linktest
+predicted_matrix <- fitted(final_model_int, outcome = FALSE)
+
+yhat <- predicted_matrix
+yhat2 <- predicted_matrix^2
+
+# Linktest for Dropout equation
+linktest_dropout <- glm(as.numeric(student_data$Target == "Dropout") ~ 
+                          yhat[,"Dropout"] + yhat2[,"Dropout"],
+                          family = binomial)
+summary(linktest_dropout)
+
+# Linktest for Enrolled equation
+linktest_enrolled <- glm(as.numeric(student_data$Target == "Enrolled") ~ 
+                          yhat[,"Enrolled"] + yhat2[,"Enrolled"],
+                          family = binomial)
+summary(linktest_enrolled)
+```
+
+```{r vif}
+# Variance Inflation Factor to check for multicollinearity
+vif_model <- lm(as.numeric(student_data$Target) ~ Debtor + 
+                Tuition.fees.up.to.date + Scholarship.holder + 
+                Admission.grade + Curricular.units.2nd.sem..grade. +
+                Age.at.enrollment + Gender + Unemployment.rate,
+                data = student_data)
+
+vif(vif_model)
+```
+
+```{r classification}
+# Classification accuracy of the final model
+predicted_class <- colnames(predicted_matrix)[apply(predicted_matrix, 
+                                                     1, which.max)]
+actual_class <- as.character(student_data$Target)
+
+accuracy <- mean(predicted_class == actual_class)
+cat("Classification Accuracy:", round(accuracy, 4))
+
+table(Predicted = predicted_class, Actual = actual_class)
+```
+
+```{r confusion-matrix-plot}
+# Confusion matrix heatmap
+confusion_df <- as.data.frame(table(Predicted = predicted_class, 
+                                     Actual = actual_class))
+
+ggplot(confusion_df, aes(x = Actual, y = Predicted, fill = Freq)) +
+  geom_tile() +
+  geom_text(aes(label = Freq), size = 5) +
+  scale_fill_gradient(low = "white", high = "#2C7BB6") +
+  labs(title = "Confusion Matrix of Predicted vs Actual Student Outcomes",
+       x = "Actual Outcome",
+       y = "Predicted Outcome",
+       fill = "Count") +
+  theme_minimal()
+```
