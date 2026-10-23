@@ -1,4 +1,4 @@
-### This is our final project for Machine Learning 1 - Classification class with my partner Aldaheir.
+### This is our final project for Machine Learning 1 - Classification methods
 
 Models: 
 SVR
